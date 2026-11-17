@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: team-agent
+  ai:
+    openai:
+      # DeepSeek 兼容 OpenAI 协议：把 base-url 指向 DeepSeek 即可
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: deepseek-chat
+          temperature: 0.2
+
+server:
+  port: 8090
+
+logging:
+  level:
+    org.springframework.ai: DEBUG

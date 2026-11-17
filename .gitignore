@@ -1,0 +1,26 @@
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# 密钥与本地环境，绝不提交
+.env
+.env.*
+application-local.yml
+*.pem
+*secret*
+
+# 日志与临时文件
+logs/
+*.log
+hs_err_pid*
+
+# 系统文件
+.DS_Store
+Thumbs.db
