@@ -1,6 +1,7 @@
 package com.teamagent.agent;
 
 import com.teamagent.tool.TeamTools;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>验收标准：控制台/响应里能看到模型先调用 searchCandidates / scoreMatch 等工具，
  * 再基于工具结果给出最终推荐——而不是模型自己凭空编名单。
  */
+@Slf4j
 @RestController
 public class AgentController {
 
@@ -35,6 +37,11 @@ public class AgentController {
 
     @GetMapping("/recommend")
     public String recommend(@RequestParam String query) {
-        return chatClient.prompt().user(query).call().content();
+        try {
+            return chatClient.prompt().user(query).call().content();
+        } catch (Exception e) {
+            log.error("推荐接口异常: query={}", query, e);
+            return "抱歉，推荐服务暂时不可用，请稍后再试。";   // 降级文案
+        }
     }
 }
