@@ -1,15 +1,36 @@
 spring:
   application:
     name: team-agent
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6380
   ai:
+    # ① 强制指定用智谱来当向量模型，防止和 DeepSeek 的 OpenAI 依赖打架
+    model:
+      chat: openai
+      embedding: zhipuai
+    # 原有的 openai (DeepSeek) 配置保留不动
     openai:
-      # DeepSeek 兼容 OpenAI 协议：把 base-url 指向 DeepSeek 即可
       api-key: ${DEEPSEEK_API_KEY}
       base-url: https://api.deepseek.com
       chat:
         options:
           model: deepseek-chat
           temperature: 0.2
+    # ② 新增智谱配置
+    zhipuai:
+      api-key: ${ZHIPU_API_KEY}
+      embedding:
+        options:
+          model: embedding-3
+          dimensions: 2048      # 必须记住这个数字，Redis 索引维度要和它对齐
+    # ③ 新增 Redis 向量库配置
+    vectorstore:
+      redis:
+        initialize-schema: true # 必须为 true，否则不会自动建向量索引
+        index-name: candidate-index
+        prefix: "candidate:"
   datasource:
     url: jdbc:mysql://127.0.0.1:3308/team_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: root

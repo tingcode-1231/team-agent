@@ -4,26 +4,28 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.ai.document.Document;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Day 2 阶段：数据源从内存假数据替换为 MySQL。
- *
- * <p>工具签名（参数名 + 描述）保持稳定，模型只依赖签名决策，不依赖实现——这就是换实现不换协议的好处。
- */
+
 @Slf4j
 @Component
 public class TeamTools {
 
     private final JdbcTemplate jdbc;
 
-    public TeamTools(JdbcTemplate jdbc) {
+    private final VectorStore vectorStore;
+
+    public TeamTools(JdbcTemplate jdbc, VectorStore vectorStore) {
         this.jdbc = jdbc;
-        jdbc.setQueryTimeout(5);   // 单条 SQL 最多执行 5 秒，超时抛 QueryTimeoutException
+        this.vectorStore = vectorStore;
+        jdbc.setQueryTimeout(5);
     }
 
     private List<Map<String, Object>> query(String sql, Object... args) {
@@ -110,6 +112,52 @@ public class TeamTools {
             log.warn("工具打分失败: topN={}, 原因: {}", n, e.getMessage());
             Map<String, Object> err = new LinkedHashMap<>();
             err.put("error", "候选人打分暂时不可用，请勿编造结果，建议告知用户稍后再试");
+            return List.of(err);
+        }
+    }
+
+    @Tool(description = "语义检索候选人。当用户用自然语言描述需求（如'找做过推荐系统的人'）时调用。返回与需求语义相近的候选人列表。无匹配时返回空列表，不得编造候选人。工具出错时返回仅含 error 字段的单元素列表")
+    public List<Map<String, Object>> semanticSearch(
+            @ToolParam(description = "用户的自然语言需求描述") String query,
+            @ToolParam(description = "召回数量") int topK) {
+
+        // 参数钳制：查询为空返回空，topK 限定在 1~20
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        int k = Math.max(1, Math.min(topK, 20));
+
+        try {
+            SearchRequest request = SearchRequest.builder().query(query).topK(k).build();
+            List<Document> docs = vectorStore.similaritySearch(request);
+
+            return docs.stream().map(doc -> {
+                // 从 "candidate-13" 中提取出 "13"
+                String docId = doc.getId();
+                String numericIdStr = docId.replace("candidate-", "");
+
+                try {
+                    Long realId = Long.parseLong(numericIdStr);
+                    // 拿 ID 回 MySQL 查数据
+                    List<Map<String, Object>> dbResults = query(
+                            "SELECT id,name,school,major,grade,skills,competitions,free_days FROM candidate WHERE id = ?",
+                            realId
+                    );
+
+                    if (!dbResults.isEmpty()) {
+                        Map<String, Object> m = new LinkedHashMap<>(dbResults.get(0));
+                        m.put("score", doc.getScore());
+                        return m;
+                    }
+                } catch (Exception e) {
+                    log.warn("解析向量库 ID 失败: {}", docId);
+                }
+                return null;
+            }).filter(java.util.Objects::nonNull).toList();
+        } catch (Exception e) {
+            log.warn("向量检索失败: query={}, 原因: {}", query, e.getMessage());
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("error", "语义查询服务暂时不可用，请勿编造结果");
             return List.of(err);
         }
     }
