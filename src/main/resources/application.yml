@@ -24,7 +24,7 @@ spring:
       embedding:
         options:
           model: embedding-3
-          dimensions: 2048      # 必须记住这个数字，Redis 索引维度要和它对齐
+          dimensions: 2048      # embedding-3 默认 2048；索引 DIM 以 FT.INFO 为准
     # ③ 新增 Redis 向量库配置
     vectorstore:
       redis:

@@ -36,7 +36,7 @@ public class VectorDataLoader implements CommandLineRunner {
 
                 // 固定 ID，保证重启重复执行时是覆盖，而不是无限新增
                 String id = "candidate-" + c.get("id");
-                return new Document(id, text, Map.of("candidateId", c.get("id")));
+                return new Document(id, text, Map.of()); // 这个参数现在没用了，直接给空 Map
             }).toList();
 
             // 3. 存入 Redis 向量库（会自动调用智谱转成向量）
