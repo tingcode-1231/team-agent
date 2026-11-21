@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>智能组队助手 (流式版)</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        input { width: 400px; padding: 8px; }
+        button { padding: 8px 16px; }
+        #out { white-space: pre-wrap; margin-top: 20px; padding: 15px; border: 1px solid #ccc; min-height: 100px; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+<h2>智能组队助手 (SSE 流式输出)</h2>
+<input id="q" placeholder="如：找会 Java 的大三队友，每周至少 4 天" value="找会 Java 的大三队友，每周至少 4 天">
+<button id="send">发送</button>
+<div id="out">等待提问...</div>
+
+<script>
+    let source = null;
+    document.getElementById('send').onclick = () => {
+        // 如果之前有没断开的连接，先关掉
+        if (source) source.close();
+
+        const query = document.getElementById('q').value;
+        const out = document.getElementById('out');
+        out.textContent = '思考中...'; // 清空上一次的结果
+
+        // 发起 SSE 请求，注意中文必须 encodeURIComponent
+        source = new EventSource('/recommend/stream?query=' + encodeURIComponent(query));
+
+        // 每次收到后端推过来的片段，追加到页面
+        source.onmessage = (e) => {
+            // 如果第一次收到消息，先把“思考中...”清空
+            if (out.textContent === '思考中...') {
+                out.textContent = '';
+            }
+            out.textContent += e.data;
+        };
+
+        // 处理出错，或者流结束
+        source.onerror = () => {
+            source.close();
+            document.getElementById('send').disabled = false;
+        };
+
+        // 为了防止报错，简单处理：一旦收到内容，就把按钮恢复（严谨的做法可以用 D6 指南 3.3 的 done 事件）
+        document.getElementById('send').disabled = true;
+    };
+</script>
+</body>
+</html>

@@ -6,6 +6,8 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
+import java.time.Duration;
 
 @Slf4j
 @RestController
@@ -39,5 +41,21 @@ public class AgentController {
             log.error("推荐接口异常: query={}", query, e);
             return "抱歉，推荐服务暂时不可用，请稍后再试。";
         }
+    }
+
+
+    @GetMapping(value = "/recommend/stream", produces = "text/event-stream;charset=UTF-8")
+    public Flux<String> recommendStream(@RequestParam String query) {
+        // Flux.defer 的作用：等前端真正连上来了，才去发请求调大模型
+        return Flux.defer(() -> chatClient.prompt().user(query).stream().content())
+                // 空闲超时：如果模型卡住60秒没吐字，就掐断
+                .timeout(Duration.ofSeconds(60))
+                // 降级兜底：流式期间报错，不会报 500，而是吐出一句降级文案
+                .onErrorResume(e -> {
+                    log.error("流式推荐异常: query={}", query, e);
+                    return Flux.just("抱歉，推荐服务暂时不可用，请稍后再试。");
+                })
+                // 可选：打个日志看看流什么时候结束的
+                .doFinally(signal -> log.info("流式结束: query={}, signal={}", query, signal));
     }
 }
