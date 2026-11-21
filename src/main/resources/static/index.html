@@ -18,33 +18,41 @@
 
 <script>
     let source = null;
+    let t0 = 0, last = 0, first = true; // 新增：用于计时
+
     document.getElementById('send').onclick = () => {
-        // 如果之前有没断开的连接，先关掉
         if (source) source.close();
 
         const query = document.getElementById('q').value;
         const out = document.getElementById('out');
-        out.textContent = '思考中...'; // 清空上一次的结果
+        out.textContent = '思考中...';
 
-        // 发起 SSE 请求，注意中文必须 encodeURIComponent
+        // 初始化前端秒表
+        t0 = performance.now();
+        last = t0;
+        first = true;
+
         source = new EventSource('/recommend/stream?query=' + encodeURIComponent(query));
 
-        // 每次收到后端推过来的片段，追加到页面
         source.onmessage = (e) => {
-            // 如果第一次收到消息，先把“思考中...”清空
-            if (out.textContent === '思考中...') {
-                out.textContent = '';
+            const now = performance.now();
+            if (first) {
+                console.log(`[METRIC] 前端 TTFB: ${(now - t0).toFixed(0)} ms`);
+                first = false;
+            } else {
+                console.log(`[METRIC] 前端 chunk 间隔: ${(now - last).toFixed(0)} ms`);
             }
+            last = now;
+
+            if (out.textContent === '思考中...') out.textContent = '';
             out.textContent += e.data;
         };
 
-        // 处理出错，或者流结束
         source.onerror = () => {
             source.close();
             document.getElementById('send').disabled = false;
         };
 
-        // 为了防止报错，简单处理：一旦收到内容，就把按钮恢复（严谨的做法可以用 D6 指南 3.3 的 done 事件）
         document.getElementById('send').disabled = true;
     };
 </script>

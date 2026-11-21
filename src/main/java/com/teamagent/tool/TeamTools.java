@@ -113,39 +113,36 @@ public class TeamTools {
         List<String> wanted = (requiredSkills == null) ? List.of() : requiredSkills;
 
         try {
-            // 2. 第一段：语义召回 Top 50
+            long t0 = System.nanoTime();
+            // 1. 宽松召回 Top 50
             List<Map<String, Object>> recalled = semanticSearchInternal(query, 50);
+            long t1 = System.nanoTime();
 
-            // 编排层拦截错误（如果 Redis 挂了，直接透传 error）
             if (recalled.size() == 1 && recalled.get(0).containsKey("error")) {
                 return recalled;
             }
 
-            // 3. 第二段：内存硬约束过滤 (AND 逻辑)
+            // 2. 内存硬约束过滤
             List<Map<String, Object>> filtered = recalled.stream()
-                    // 年级匹配（如果不限，grade 为空）
                     .filter(c -> grade == null || grade.isBlank() || grade.equals(c.get("grade")))
-                    // 时间匹配
                     .filter(c -> (int) c.get("freeDays") >= days)
-                    // 技能匹配：必须包含 requiredSkills 里的所有元素 (同时兼顾 skills 和 competitions 字段)
                     .filter(c -> {
-                        List<?> cSkills = (List<?>) c.get("skills");
+                        List<?> cSkills = c.get("skills") == null ? List.of() : (List<?>) c.get("skills");
                         String comps = (String) c.get("competitions");
                         String compsStr = comps == null ? "" : comps;
-
-                        // 要求 wanted 里的每一个技能，要么在 skills 列表里，要么在 competitions 字符串里
-                        return wanted.stream().allMatch(skill ->
-                                cSkills.contains(skill) || compsStr.contains(skill)
-                        );
+                        return wanted.stream().allMatch(skill -> cSkills.contains(skill) || compsStr.contains(skill));
                     })
                     .toList();
+            long t2 = System.nanoTime();
 
-            // 4. 打分重排并取 Top N
+            // 3. 打分重排 Top N
             List<Map<String, Object>> result = rank(filtered, wanted, n);
+            long t3 = System.nanoTime();
 
-            // 5. 打印可观测日志
-            log.info("两段式: 召回={} 硬过滤后={} 输出={} | grade={} minFreeDays={} skills={} query={}",
-                    recalled.size(), filtered.size(), result.size(), grade, days, wanted, query);
+            // 打点：记录每一段的耗时
+            log.info("METRIC tool | recallMs={} filterMs={} rankMs={} totalMs={} | grade={} minFreeDays={} skills={} query={}",
+                    (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000, (t3 - t2) / 1_000_000, (t3 - t0) / 1_000_000,
+                    grade, days, wanted, query);
 
             return result;
 

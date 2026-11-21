@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @RestController
@@ -46,16 +49,41 @@ public class AgentController {
 
     @GetMapping(value = "/recommend/stream", produces = "text/event-stream;charset=UTF-8")
     public Flux<String> recommendStream(@RequestParam String query) {
-        // Flux.defer 的作用：等前端真正连上来了，才去发请求调大模型
-        return Flux.defer(() -> chatClient.prompt().user(query).stream().content())
-                // 空闲超时：如果模型卡住60秒没吐字，就掐断
-                .timeout(Duration.ofSeconds(60))
-                // 降级兜底：流式期间报错，不会报 500，而是吐出一句降级文案
-                .onErrorResume(e -> {
-                    log.error("流式推荐异常: query={}", query, e);
-                    return Flux.just("抱歉，推荐服务暂时不可用，请稍后再试。");
-                })
-                // 可选：打个日志看看流什么时候结束的
-                .doFinally(signal -> log.info("流式结束: query={}, signal={}", query, signal));
+        // 使用 defer 保证每次请求都有自己独立的计时器状态
+        return Flux.defer(() -> {
+            long startTime = System.nanoTime();
+            AtomicLong firstChunkTime = new AtomicLong(0);
+            AtomicLong lastChunkTime = new AtomicLong(startTime);
+            AtomicLong maxInterval = new AtomicLong(0);
+            AtomicInteger chunkCount = new AtomicInteger(0);
+            AtomicBoolean isFirst = new AtomicBoolean(true);
+
+            return chatClient.prompt().user(query).stream().content()
+                    .doOnNext(chunk -> {
+                        long now = System.nanoTime();
+                        if (isFirst.compareAndSet(true, false)) {
+                            firstChunkTime.set(now);
+                        } else {
+                            // 计算与上一段的间隔（毫秒）
+                            long interval = (now - lastChunkTime.get()) / 1_000_000;
+                            maxInterval.updateAndGet(max -> Math.max(max, interval));
+                        }
+                        lastChunkTime.set(now);
+                        chunkCount.incrementAndGet();
+                    })
+                    .timeout(Duration.ofSeconds(60))
+                    .onErrorResume(e -> {
+                        log.error("流式推荐异常: query={}", query, e);
+                        return Flux.just("抱歉，推荐服务暂时不可用，请稍后再试。");
+                    })
+                    .doFinally(signal -> {
+                        long totalMs = (System.nanoTime() - startTime) / 1_000_000;
+                        long ttfbMs = firstChunkTime.get() == 0 ? totalMs : (firstChunkTime.get() - startTime) / 1_000_000;
+
+                        // 结构化日志打点，方便以后用脚本抓取
+                        log.info("METRIC stream | query={} ttfbMs={} totalMs={} chunks={} maxIntervalMs={} signal={}",
+                                query, ttfbMs, totalMs, chunkCount.get(), maxInterval.get(), signal);
+                    });
+        });
     }
 }
