@@ -1,4 +1,4 @@
-package com.teamagent.tool;
+package com.teamagent;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -140,8 +140,9 @@ public class TeamTools {
             long t3 = System.nanoTime();
 
             // 打点：记录每一段的耗时
-            log.info("METRIC tool | recallMs={} filterMs={} rankMs={} totalMs={} | grade={} minFreeDays={} skills={} query={}",
+            log.info("METRIC tool | recallMs={} filterMs={} rankMs={} totalMs={} recalled={} filtered={} output={} | grade={} minFreeDays={} skills={} query={}",
                     (t1 - t0) / 1_000_000, (t2 - t1) / 1_000_000, (t3 - t2) / 1_000_000, (t3 - t0) / 1_000_000,
+                    recalled.size(), filtered.size(), result.size(), // 加在这里
                     grade, days, wanted, query);
 
             return result;

@@ -1,6 +1,6 @@
 package com.teamagent.agent;
 
-import com.teamagent.tool.TeamTools;
+import com.teamagent.TeamTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -57,6 +57,7 @@ public class AgentController {
             AtomicLong maxInterval = new AtomicLong(0);
             AtomicInteger chunkCount = new AtomicInteger(0);
             AtomicBoolean isFirst = new AtomicBoolean(true);
+            AtomicBoolean degraded = new AtomicBoolean(false);
 
             return chatClient.prompt().user(query).stream().content()
                     .doOnNext(chunk -> {
@@ -74,15 +75,17 @@ public class AgentController {
                     .timeout(Duration.ofSeconds(60))
                     .onErrorResume(e -> {
                         log.error("流式推荐异常: query={}", query, e);
+                        degraded.set(true); // 标记为降级
                         return Flux.just("抱歉，推荐服务暂时不可用，请稍后再试。");
                     })
+
                     .doFinally(signal -> {
                         long totalMs = (System.nanoTime() - startTime) / 1_000_000;
                         long ttfbMs = firstChunkTime.get() == 0 ? totalMs : (firstChunkTime.get() - startTime) / 1_000_000;
 
                         // 结构化日志打点，方便以后用脚本抓取
-                        log.info("METRIC stream | query={} ttfbMs={} totalMs={} chunks={} maxIntervalMs={} signal={}",
-                                query, ttfbMs, totalMs, chunkCount.get(), maxInterval.get(), signal);
+                        log.info("METRIC stream | query={} ttfbMs={} totalMs={} chunks={} maxIntervalMs={} degraded={} signal={}",
+                                query, ttfbMs, totalMs, chunkCount.get(), maxInterval.get(), degraded.get(), signal);
                     });
         });
     }
